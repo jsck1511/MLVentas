@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Links ML">
+<meta name="theme-color" content="#F6F3FB">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Links ML</title>
+<style>
+:root{--ink:#1E1A2B;--mute:#6F6A82;--paper:#F6F3FB;--card:#fff;--violet:#5B3DF5;--on:#fff;--line:#E3DEF0}
+@media(prefers-color-scheme:dark){:root{--ink:#F2EFFA;--mute:#A29DB8;--paper:#14111D;--card:#1F1B2D;--violet:#8C74FF;--on:#14111D;--line:#322D45}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));max-width:640px;margin-inline:auto}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0 12px}
+h1{font-size:28px;letter-spacing:-.02em;margin:0}
+#badge{font-size:13px;color:var(--mute);margin-top:2px}
+button{font:inherit;border:0;border-radius:12px;padding:10px 14px;background:var(--card);color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid var(--violet);outline-offset:2px}
+.pri{background:var(--violet);color:var(--on);border-color:var(--violet);font-weight:600}
+.add{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px}
+textarea{width:100%;min-height:76px;border:0;background:transparent;color:var(--ink);font:inherit;resize:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.row .sp{flex:1}
+.chip{border-radius:99px;padding:6px 12px;font-size:14px;white-space:nowrap}
+.chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+#tabs{display:flex;gap:8px;overflow-x:auto;margin:18px -16px 8px;padding:0 16px;scrollbar-width:none}
+#list{display:grid;gap:8px}
+.it{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:14px;padding:10px 12px}
+.it b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it span{font-size:13px;color:var(--mute)}
+.empty{color:var(--mute);text-align:center;padding:28px 0}
+dialog{border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);width:min(92vw,420px)}
+dialog input{width:100%;margin:6px 0 12px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit}
+@media(prefers-reduced-motion:no-preference){.it{transition:transform .15s}.it:active{transform:scale(.99)}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Links ML</h1><div id="badge"></div></div>
+  <div class="row" style="margin:0"><button id="sync">Sincronizar</button><button id="gear" aria-label="Ajustes">Ajustes</button></div>
+</header>
+
+<section class="add">
+  <textarea id="in" placeholder="Pegá uno o varios links de Mercado Libre" aria-label="Links"></textarea>
+  <div class="row" id="chips"></div>
+  <div class="row"><button id="paste">Pegar</button><span class="sp"></span><button class="pri" id="save">Guardar</button></div>
+</section>
+
+<nav id="tabs" aria-label="Categorías"></nav>
+<main id="list"></main>
+
+<dialog id="dlg">
+  <label>URL del Apps Script<input id="cu" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+  <label>Token<input id="ct"></label>
+  <div class="row"><button id="cancel">Cancelar</button><span class="sp"></span><button class="pri" id="ok">Guardar</button></div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const DEF = [
+ ['Accesorios','#8F6BFF','cartera bolso mochila rinonera billetera anteojos lentes reloj collar aros pulsera anillo bijouterie cinturon gorra gorro bufanda panuelo scrunchie hebilla vincha tobillera cadena'],
+ ['Ropa','#FF6B9A','remera buzo campera jean pantalon short vestido pollera camisa top body calza jogging sweater cardigan musculosa conjunto medias pijama'],
+ ['Calzado','#FF9A3D','zapatilla sandalia bota botineta ojota zueco mocasin alpargata borcego chinela'],
+ ['Deco y hogar','#2FB67C','lampara led espejo cuadro poster alfombra almohadon cortina vela difusor organizador estante florero maceta tapiz luces'],
+ ['Papelería y diseño','#2D8CFF','agenda cuaderno sticker lapicera marcador cartuchera planner washi mouse pad tablet escritorio anotador resaltador acuarela pincel'],
+ ['Belleza','#C45BFF','maquillaje labial base rubor sombra perfume crema skincare serum plancha secador rizador esmalte unas brocha'],
+ ['Tech y gadgets','#17B3C7','auricular auriculares funda cargador parlante cable soporte teclado camara'],
+ ['Otros','#9A95AD','']
+].map(([name,color,k]) => ({name,color,kw:k.split(' ').filter(Boolean)}));
+
+const ls = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const S = { items: ls('items', []), cats: ls('cats', DEF), cfg: ls('cfg', {}), tab: 'Todas', pick: null, busy: false };
+const store = () => { localStorage.setItem('items', JSON.stringify(S.items)); localStorage.setItem('cats', JSON.stringify(S.cats)); };
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const color = n => (S.cats.find(c => c.name === n) || {color:'#9A95AD'}).color;
+
+function classify(text) {
+  const t = norm(text); let best = 'Otros', top = 0;
+  S.cats.forEach(c => {
+    const n = c.kw.filter(k => k && new RegExp('(^|[^a-z0-9])' + k).test(t)).length;
+    if (n > top) { top = n; best = c.name; }
+  });
+  return best;
+}
+function slug(u) { try { return decodeURIComponent(new URL(u).pathname).replace(/MLA-?\d+/gi, ' ').replace(/[-_/+]+/g, ' ').trim(); } catch { return ''; } }
+const urls = t => [...new Set(t.match(/https?:\/\/[^\s]+/g) || [])];
+const title = i => i.name || (slug(i.url).replace(/\b(jm|p|up)\b/gi, '').trim().replace(/^./, c => c.toUpperCase())) || 'Link sin nombre';
+
+function renderChips() {
+  const u = urls($('in').value), box = $('chips');
+  if (u.length !== 1) { box.innerHTML = u.length > 1 ? '<span style="color:var(--mute);font-size:14px">' + u.length + ' links, categoría automática</span>' : ''; S.pick = null; return; }
+  const sel = S.pick || classify(slug(u[0]));
+  box.innerHTML = S.cats.map(c => '<button class="chip' + (c.name === sel ? ' on' : '') + '" data-c="' + esc(c.name) + '"><i style="background:' + c.color + '"></i>' + esc(c.name) + '</button>').join('');
+}
+function render() {
+  const counts = {}; S.items.forEach(i => counts[i.cat] = (counts[i.cat] || 0) + 1);
+  const names = ['Todas', ...S.cats.map(c => c.name).filter(n => counts[n])];
+  if (!names.includes(S.tab)) S.tab = 'Todas';
+  $('tabs').innerHTML = names.map(n => '<button class="chip' + (n === S.tab ? ' on' : '') + '" data-t="' + esc(n) + '">' + esc(n) + ' ' + (n === 'Todas' ? S.items.length : counts[n]) + '</button>').join('');
+  const list = S.items.filter(i => S.tab === 'Todas' || i.cat === S.tab).sort((a, b) => b.ts - a.ts);
+  $('list').innerHTML = list.length ? list.map(i => '<a class="it" style="--c:' + color(i.cat) + '" href="' + esc(i.url) + '" target="_blank" rel="noopener"><b>' + esc(title(i)) + '</b><span>' + esc(i.cat) + (i.price ? ' · $' + Number(i.price).toLocaleString('es-AR') : '') + (i.st === 'p' ? ' · sin enviar' : '') + '</span></a>').join('') : '<div class="empty">Todavía no hay links. Pegá el primero arriba.</div>';
+  const p = S.items.filter(i => i.st === 'p').length;
+  $('badge').textContent = (navigator.onLine ? '' : 'Sin conexión · ') + (p ? p + ' sin enviar' : 'Todo enviado');
+  renderChips();
+}
+
+function add() {
+  const u = urls($('in').value); if (!u.length) return;
+  u.forEach(x => {
+    if (S.items.some(i => i.url === x)) return;
+    const manual = u.length === 1 && !!S.pick;
+    S.items.push({ id: crypto.randomUUID(), url: x, cat: manual ? S.pick : classify(slug(x)), manual, ts: Date.now(), st: 'p' });
+  });
+  $('in').value = ''; S.pick = null; store(); render(); sync();
+}
+
+async function sync() {
+  const { url, token } = S.cfg;
+  if (!url || !token || !navigator.onLine || S.busy) return;
+  S.busy = true; $('badge').textContent = 'Sincronizando…';
+  try {
+    const pend = S.items.filter(i => i.st === 'p');
+    if (pend.length) {
+      const r = await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, items: pend.map(({ id, url, cat, manual, ts }) => ({ cid: id, url, cat, manual, ts })) }) })).json();
+      if (!r.ok) throw new Error('token');
+      pend.forEach(i => i.st = 's');
+    }
+    const g = await (await fetch(url + '?action=list&token=' + encodeURIComponent(token))).json();
+    if (!g.ok) throw new Error('token');
+    S.cats = g.cats.length ? g.cats : S.cats;
+    S.items = S.items.filter(i => i.st === 'p').concat(g.items.map(i => ({ ...i, st: 's' })));
+    store();
+  } catch (e) { $('badge').textContent = 'No se pudo sincronizar. Revisá URL y token en Ajustes.'; S.busy = false; return; }
+  S.busy = false; render();
+}
+
+$('in').addEventListener('input', () => { S.pick = null; renderChips(); });
+$('chips').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { S.pick = b.dataset.c; renderChips(); } });
+$('tabs').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) { S.tab = b.dataset.t; render(); } });
+$('paste').onclick = async () => { try { $('in').value = (await navigator.clipboard.readText()); $('in').dispatchEvent(new Event('input')); } catch { $('in').focus(); } };
+$('save').onclick = add;
+$('sync').onclick = sync;
+$('gear').onclick = () => { $('cu').value = S.cfg.url || ''; $('ct').value = S.cfg.token || ''; $('dlg').showModal(); };
+$('cancel').onclick = () => $('dlg').close();
+$('ok').onclick = () => { S.cfg = { url: $('cu').value.trim(), token: $('ct').value.trim() }; localStorage.setItem('cfg', JSON.stringify(S.cfg)); $('dlg').close(); sync(); };
+addEventListener('online', sync); addEventListener('offline', render);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+render(); sync();
+</script>
+</body>
+</html>
